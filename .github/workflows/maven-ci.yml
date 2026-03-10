@@ -1,5 +1,4 @@
 name: Enterprise Calculator CI
-
 on:
   push:
     branches: [ "main" ]
