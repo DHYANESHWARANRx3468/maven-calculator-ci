@@ -1,25 +1,64 @@
-name: Java CI with Maven
+name: Enterprise Calculator CI
 
 on:
   push:
-    branches: [ "main" ] # Triggers whenever you push to main
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ] # Triggers on pull requests to main
+    branches: [ "main" ]
+  # This adds the manual trigger button
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: 'Run with extra logging?'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  security-events: write
+  actions: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest # The "Robot" runs on a Linux machine
-
+  build-and-security:
+    name: Build, Test & Scan
+    runs-on: ubuntu-latest
+    
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4 # Step 1: Download your code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4 # Step 2: Install Java
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven # This makes future builds faster
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
 
-    - name: Build and Test
-      run: mvn -B package # Step 3: Compile, Test, and Package
+      # Manual Trigger Info: Shows who started the build manually
+      - name: Log Dispatch Info
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "Manual build triggered by ${{ github.actor }}. Debug mode is ${{ github.event.inputs.debug_mode }}"
+
+      - name: Submit Dependency Graph
+        uses: advanced-security/maven-dependency-submission-action@v4
+        if: github.event_name != 'pull_request'
+
+      - name: Build with Maven
+        run: mvn -B clean verify
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-test-results
+          path: '**/target/surefire-reports/*.xml'
+
+      - name: Archive Calculator Binary
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculator-v${{ github.run_number }}
+          path: target/*.jar
+          retention-days: 7
