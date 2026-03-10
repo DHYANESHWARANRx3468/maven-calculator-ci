@@ -1,0 +1,66 @@
+name: Enterprise Calculator CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Best Practice: Explicitly define permissions for security
+permissions:
+  contents: write    # Required for dependency submission
+  security-events: write
+  actions: read
+
+jobs:
+  build-and-security:
+    name: Build, Test & Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history is better for security scans
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven' # Built-in caching for ~/.m2/repository
+
+      # 1. Dependency Submission (Professional Requirement)
+      # This populates your GitHub Dependency Graph so you can see every library you use
+      - name: Submit Dependency Graph
+        uses: advanced-security/maven-dependency-submission-action@v4
+        if: github.event_name != 'pull_request'
+
+      # 2. Security Scan (SCA)
+      # Checks your pom.xml for libraries with known hacks/bugs
+      - name: Vulnerability Scan
+        uses: snyk/actions/maven@master
+        continue-on-error: true # Don't block the build if Snyk isn't configured yet
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      # 3. Main Build and Test
+      - name: Build with Maven
+        run: mvn -B clean verify
+
+      # 4. Upload Test Results (JUnit XMLs)
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-test-results
+          path: '**/target/surefire-reports/*.xml'
+
+      # 5. Save the Production Artifact
+      - name: Archive Calculator Binary
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculator-v${{ github.run_number }}
+          path: target/*.jar
+          retention-days: 7
